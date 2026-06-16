@@ -25,7 +25,7 @@ then add `downcloud.packages.${system}.default` to your `environment.systemPacka
 
 ## authentication
 
-some tracks are only available for download with a soundcloud oauth token. to get yours:
+higher-quality downloads of some tracks are only available for download with a soundcloud oauth token. to get yours:
 
 1. open soundcloud and log in
 2. open devtools and go to **application** > **storage** > **cookies** > `soundcloud.com`
