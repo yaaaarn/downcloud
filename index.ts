@@ -4,14 +4,87 @@ import { mkdir, unlink } from "node:fs/promises";
 import { secrets } from "bun";
 import { Command } from "commander";
 import chalk from "chalk";
-import {
-  extractAssetUrls,
-  findClientIdInChunk,
-  normalizeWaveform,
-  renderAsciiWaveform,
-  originalArtworkUrl,
-  formatTime,
-} from "./lib";
+
+function extractAssetUrls(html: string): string[] {
+  const urls: string[] = [];
+  const re = /src="(https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    urls.push(m[1]);
+  }
+  return urls;
+}
+
+function findClientIdInChunk(chunk: string): string | null {
+  const match = chunk.match(/client_id:"([a-zA-Z0-9]+)"/);
+  return match ? match[1]! : null;
+}
+
+function compressWaveform(samples: number[], targetWidth: number): number[] {
+  const n = samples.length;
+  const chunkSize = Math.ceil(n / targetWidth);
+  const compressed: number[] = [];
+  for (let i = 0; i < n; i += chunkSize) {
+    let sum = 0;
+    const end = Math.min(i + chunkSize, n);
+    for (let j = i; j < end; j++) {
+      sum += samples[j];
+    }
+    compressed.push(sum / (end - i));
+  }
+  return compressed;
+}
+
+function normalizeWaveform(samples: number[], targetWidth: number): number[] {
+  const compressed = compressWaveform(samples, targetWidth);
+  let maxVal = 0;
+  for (let i = 0; i < compressed.length; i++) {
+    if (compressed[i] > maxVal) maxVal = compressed[i];
+  }
+  maxVal = maxVal || 1;
+  for (let i = 0; i < compressed.length; i++) {
+    compressed[i] /= maxVal;
+  }
+  return compressed;
+}
+
+function renderAsciiWaveform(
+  samples: number[],
+  targetWidth = 75,
+): { top: string; bottom: string } {
+  const maxVal = Math.max(...samples) || 1;
+  const compressed = compressWaveform(samples, targetWidth);
+
+  const topSet = [" ", "▖", "▌"];
+  const botSet = [" ", "▘", "▌"];
+
+  const top = compressed
+    .map(v => {
+      const norm = v / maxVal;
+      const index = Math.min(Math.floor(norm * topSet.length), topSet.length - 1);
+      return topSet[index];
+    })
+    .join("");
+
+  const bottom = compressed
+    .map(v => {
+      const norm = v / maxVal;
+      const index = Math.min(Math.floor(norm * botSet.length), botSet.length - 1);
+      return botSet[index];
+    })
+    .join("");
+
+  return { top, bottom };
+}
+
+function originalArtworkUrl(url: string): string {
+  return url.replace(/-(large|t\d+x\d+)(?=\.\w+)/, "-original");
+}
+
+function formatTime(ms: number): string {
+  const sec = Math.floor(ms / 1000);
+  return `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
+}
 
 const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.114 Safari/537.36";
 const CACHE_FILE = join(process.env.HOME || ".", ".downcloud_client_id");
