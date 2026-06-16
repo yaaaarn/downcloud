@@ -1,5 +1,7 @@
 # downcloud
 
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/yaaaarn/downcloud?utm_source=badge)
+
 a simple (and fast) soundcloud downloader.
 
 ## install
