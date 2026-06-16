@@ -4,6 +4,14 @@ import { mkdir, unlink } from "node:fs/promises";
 import { secrets } from "bun";
 import { Command } from "commander";
 import chalk from "chalk";
+import {
+  extractAssetUrls,
+  findClientIdInChunk,
+  normalizeWaveform,
+  renderAsciiWaveform,
+  originalArtworkUrl,
+  formatTime,
+} from "./lib";
 
 const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.114 Safari/537.36";
 const CACHE_FILE = join(process.env.HOME || ".", ".downcloud_client_id");
@@ -53,9 +61,8 @@ async function resolveClientId(): Promise<string> {
     headers: { "User-Agent": userAgent },
   }).then(r => r.text());
 
-  const assetRegex = /src="(https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js)"/g;
-  const assetUrls = Array.from(html.matchAll(assetRegex), m => m[1]);
-  clientId = await findClientId(assetUrls.filter(x => x != null));
+  const assetUrls = extractAssetUrls(html);
+  clientId = await findClientId(assetUrls);
   if (!clientId) throw new Error("could not find client_id");
   await cacheFile.write(clientId);
   return clientId;
@@ -104,9 +111,9 @@ async function findClientIdInAsset(url: string, signal: AbortSignal) {
 
     chunk += decoder.decode(value, { stream: true });
 
-    const match = chunk.match(/client_id:"([a-zA-Z0-9]+)"/);
-    if (match) {
-      return match[1];
+    const clientId = findClientIdInChunk(chunk);
+    if (clientId) {
+      return clientId;
     }
 
     if (chunk.length > 10000) {
@@ -140,36 +147,7 @@ async function printAsciiWaveform(waveformUrl: string) {
     const { samples } = await res.json() as { samples: number[] };
     if (!samples || samples.length === 0) return;
 
-    const targetWidth = 75;
-    const maxVal = Math.max(...samples) || 1;
-
-    const compressed: number[] = [];
-    const chunkSize = Math.ceil(samples.length / targetWidth);
-
-    for (let i = 0; i < samples.length; i += chunkSize) {
-      const chunk = samples.slice(i, i + chunkSize);
-      const avg = chunk.reduce((sum, v) => sum + v, 0) / chunk.length;
-      compressed.push(avg);
-    }
-
-    const topSet = [" ", "▖", "▌"];
-    const botSet = [" ", "▘", "▌"];
-
-    const topRow = compressed
-      .map(v => {
-        const norm = v / maxVal;
-        const index = Math.min(Math.floor(norm * topSet.length), topSet.length - 1);
-        return topSet[index];
-      })
-      .join("");
-
-    const bottomRow = compressed
-      .map(v => {
-        const norm = v / maxVal;
-        const index = Math.min(Math.floor(norm * botSet.length), botSet.length - 1);
-        return botSet[index];
-      })
-      .join("");
+    const { top: topRow, bottom: bottomRow } = renderAsciiWaveform(samples, 75);
 
     console.log()
     console.log(topRow);
@@ -262,15 +240,7 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
       if (res.ok) {
         const { samples: raw } = await res.json() as { samples: number[] };
         if (raw?.length) {
-          const targetWidth = 75;
-          const chunkSize = Math.ceil(raw.length / targetWidth);
-          const compressed: number[] = [];
-          for (let i = 0; i < raw.length; i += chunkSize) {
-            const chunk = raw.slice(i, i + chunkSize);
-            compressed.push(chunk.reduce((s, v) => s + v, 0) / chunk.length);
-          }
-          const maxVal = Math.max(...compressed) || 1;
-          samples = compressed.map(v => v / maxVal);
+          samples = normalizeWaveform(raw, 75);
         }
       }
     } catch {}
@@ -302,10 +272,7 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
 
   let elapsed = 0;
 
-  const fmt = (ms: number) => {
-    const sec = Math.floor(ms / 1000);
-    return `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
-  };
+  const fmt = formatTime;
 
   const draw = (pct: number) => {
     const timeStr = duration ? `${fmt(elapsed)} / ${fmt(duration)}` : `${Math.round(pct * 100)}%`;
@@ -403,7 +370,7 @@ async function downloadTrack(track: Track, clientId: string, oauthToken: string 
   }
 
   const trackUrl = `https://soundcloud.com/${user.permalink}/${permalink}`;
-  const artwork = artwork_url?.replace(/-(large|t\d+x\d+)(?=\.\w+)/, "-original");
+  const artwork = artwork_url ? originalArtworkUrl(artwork_url) : undefined;
 
   const metadata: AudioMetadata = {
     title,
