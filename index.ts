@@ -1,5 +1,6 @@
 import { join } from "path";
-import { mkdir } from "node:fs/promises";
+import { tmpdir } from "os";
+import { mkdir, unlink } from "node:fs/promises";
 import { secrets } from "bun";
 import { Command } from "commander";
 import chalk from "chalk";
@@ -15,17 +16,29 @@ interface Transcoding {
 interface Track {
   id: number;
   title: string;
+  description: string;
   downloadable: boolean;
   has_downloads_left: boolean;
   user: { username: string; permalink: string; };
   permalink: string;
   media: { transcodings: Transcoding[] };
-  publisher_metadata: {
+  publisher_metadata?: {
     artist: string,
-    explicit: boolean
-  },
+    album_title?: string,
+    explicit: boolean,
+  };
+  artwork_url: string;
   waveform_url?: string;
   duration?: number;
+}
+
+interface AudioMetadata {
+  title: string;
+  artist: string;
+  album: string;
+  description?: string;
+  url?: string;
+  artworkUrl?: string;
 }
 
 async function resolveClientId(): Promise<string> {
@@ -165,7 +178,7 @@ async function printAsciiWaveform(waveformUrl: string) {
   } catch (e) { }
 }
 
-async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: string | undefined, user: any, permalink: string, mimeType?: string, debug?: boolean, outDir?: string, duration?: number, waveformUrl?: string) {
+async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: string | undefined, user: any, permalink: string, mimeType?: string, debug?: boolean, outDir?: string, duration?: number, waveformUrl?: string, metadata?: AudioMetadata) {
   let format = "";
 
   if (isDownload) {
@@ -182,18 +195,60 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
     if (outDir) outFile = join(outDir, outFile);
   }
 
-  let args: string[];
-
-  if (format.includes("flac")) {
-    if (isDefaultName) outFile += ".flac";
-    args = ["ffmpeg", "-i", streamUrl, "-c", "copy", "-y", outFile!];
-  } else if (format.includes("wav") || format.includes("x-wav") || format.includes("aiff")) {
-    if (isDefaultName) outFile += ".flac";
-    args = ["ffmpeg", "-i", streamUrl, "-c:a", "flac", "-compression_level", "8", "-map_metadata", "0", "-y", outFile!];
-  } else {
-    if (isDefaultName) outFile += ".m4a";
-    args = ["ffmpeg", "-i", streamUrl, "-c", "copy", "-movflags", "+faststart", "-y", outFile!];
+  let coverFile: string | undefined;
+  if (metadata?.artworkUrl) {
+    try {
+      const res = await fetch(metadata.artworkUrl);
+      if (res.ok) {
+        coverFile = join(tmpdir(), `downcloud_cover_${Date.now()}.jpg`);
+        await Bun.write(coverFile, new Uint8Array(await res.arrayBuffer()));
+      }
+    } catch {}
   }
+
+  const buildArgs = (): string[] => {
+    const hasCover = !!coverFile;
+    let args: string[];
+
+    if (format.includes("flac")) {
+      if (isDefaultName) outFile += ".flac";
+      args = ["ffmpeg", "-i", streamUrl];
+      if (hasCover) {
+        args.push("-i", coverFile!, "-map", "0:a", "-map", "1:v", "-c:a", "flac", "-compression_level", "8", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic");
+      } else {
+        args.push("-c", "copy");
+      }
+    } else if (format.includes("wav") || format.includes("x-wav") || format.includes("aiff")) {
+      if (isDefaultName) outFile += ".flac";
+      args = ["ffmpeg", "-i", streamUrl];
+      if (hasCover) {
+        args.push("-i", coverFile!, "-map", "0:a", "-map", "1:v", "-c:a", "flac", "-compression_level", "8", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic");
+      } else {
+        args.push("-c:a", "flac", "-compression_level", "8", "-map_metadata", "0");
+      }
+    } else {
+      if (isDefaultName) outFile += ".m4a";
+      args = ["ffmpeg", "-i", streamUrl];
+      if (hasCover) {
+        args.push("-i", coverFile!, "-map", "0:a", "-map", "1:v", "-c:a", "copy", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic", "-movflags", "+faststart");
+      } else {
+        args.push("-c", "copy", "-movflags", "+faststart");
+      }
+    }
+
+    if (metadata) {
+      args.push("-metadata", `title=${metadata.title}`);
+      args.push("-metadata", `artist=${metadata.artist}`);
+      args.push("-metadata", `album=${metadata.album}`);
+      if (metadata.description) args.push("-metadata", `description=${metadata.description}`);
+      if (metadata.url) args.push("-metadata", `url=${metadata.url}`);
+    }
+
+    args.push("-y", outFile!);
+    return args;
+  };
+
+  let args = buildArgs();
 
   const bright = chalk.hex("#E64D16");
   const pastel = chalk.hex("#FF9E6A");
@@ -227,6 +282,7 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
     if (waveformUrl) {
       await printAsciiWaveform(waveformUrl);
     }
+    if (coverFile) await unlink(coverFile).catch(() => {});
     console.log(`saved to ${outFile}`);
     return;
   }
@@ -306,11 +362,13 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
   process.stdout.write("\x1b[?25h");
 
   console.log(`saved to ${outFile}`);
+  if (coverFile) await unlink(coverFile).catch(() => {});
 }
 
-async function downloadTrack(track: Track, clientId: string, oauthToken: string | undefined, outDir?: string, debug?: boolean) {
-  const { id, title, publisher_metadata, media, user, permalink, downloadable, has_downloads_left, waveform_url, duration } = track;
-  console.log(`${title} — ${publisher_metadata?.artist || user.username}`);
+async function downloadTrack(track: Track, clientId: string, oauthToken: string | undefined, outDir?: string, debug?: boolean, albumName?: string, customOutFile?: string) {
+  const { id, title, description, publisher_metadata, media, user, permalink, downloadable, has_downloads_left, waveform_url, duration, artwork_url } = track;
+  const artist = publisher_metadata?.artist || user.username;
+  console.log(`${title} — ${artist}`);
 
   if (downloadable && has_downloads_left && !oauthToken) {
     console.warn("this track is downloadable, provide an oauth_token to download original file.");
@@ -344,7 +402,19 @@ async function downloadTrack(track: Track, clientId: string, oauthToken: string 
     streamUrl = (await fetch(`${hls.url}?client_id=${clientId}`).then(r => r.json()) as { url: string }).url;
   }
 
-  await saveAudio(streamUrl, isDownload, undefined, user, permalink, mimeType, debug, outDir, duration, waveform_url);
+  const trackUrl = `https://soundcloud.com/${user.permalink}/${permalink}`;
+  const artwork = artwork_url?.replace(/-(large|t\d+x\d+)(?=\.\w+)/, "-original");
+
+  const metadata: AudioMetadata = {
+    title,
+    artist,
+    album: albumName || publisher_metadata?.album_title || title,
+    description: description || undefined,
+    url: trackUrl,
+    artworkUrl: artwork,
+  };
+
+  await saveAudio(streamUrl, isDownload, customOutFile, user, permalink, mimeType, debug, outDir, duration, waveform_url, metadata);
 }
 
 const program = new Command();
@@ -390,42 +460,7 @@ program
     const clientId = await resolveClientId();
     const data = await resolveUrl(trackUrl, clientId) as Track;
 
-    const { id, title, publisher_metadata, media, user, permalink, downloadable, has_downloads_left, waveform_url, duration } = data;
-    console.log(`${title} — ${publisher_metadata?.artist || user.username}`);
-
-    if (downloadable && has_downloads_left && !oauthToken) {
-      console.warn("this track is downloadable, provide an oauth_token to download original file.");
-    }
-
-    console.log();
-
-    let streamUrl: string | undefined;
-    let isDownload = false;
-    let mimeType: string | undefined;
-
-    if (downloadable && has_downloads_left && oauthToken) {
-      const res = await fetch(`https://api-v2.soundcloud.com/tracks/${id}/download?client_id=${clientId}`, {
-        headers: { Authorization: `OAuth ${oauthToken}`, "User-Agent": userAgent },
-      });
-
-      if (res.ok) {
-        const { redirectUri } = await res.json() as { redirectUri?: string };
-        if (redirectUri) {
-          streamUrl = redirectUri;
-          isDownload = true;
-        }
-      }
-    }
-
-    if (!streamUrl) {
-      const hls = media.transcodings.find(t => t.format.protocol === "hls" && t.format.mime_type.includes("fmp4"))
-        ?? media.transcodings.find(t => t.format.protocol === "hls");
-      if (!hls) throw new Error("no hls stream found");
-      mimeType = hls.format.mime_type;
-      streamUrl = (await fetch(`${hls.url}?client_id=${clientId}`).then(r => r.json()) as { url: string }).url;
-    }
-
-    await saveAudio(streamUrl, isDownload, customOutFile, user, permalink, mimeType, debug, options.output, duration, waveform_url);
+    await downloadTrack(data, clientId, oauthToken, options.output, debug, undefined, customOutFile);
   });
 
 program
@@ -478,7 +513,7 @@ program
         continue;
       }
       try {
-        await downloadTrack(track, clientId, oauthToken, outDir, debug);
+        await downloadTrack(track, clientId, oauthToken, outDir, debug, title);
         console.log();
       } catch (e) {
         console.error(`failed: ${track.title}: ${e}`);
