@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { secrets } from "bun";
 import { Command } from "commander";
 import chalk from "chalk";
+import { name, description, version } from './package.json'
 
 function compressWaveform(samples: number[], targetWidth: number): number[] {
   const n = samples.length;
@@ -429,13 +430,11 @@ async function downloadTrack(track: Track, clientId: string, oauthToken: string 
   });
 }
 
-const { version } = await Bun.file(join(import.meta.dir!, "package.json")).json() as { version: string };
-
 const program = new Command();
 
 program
-  .name("downcloud")
-  .description("a simple (and fast) soundcloud downloader")
+  .name(name)
+  .description(description)
   .version(version);
 
 program
