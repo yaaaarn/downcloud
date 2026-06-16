@@ -7,10 +7,13 @@
  * These assets are scanned to discover the public `client_id`.
  */
 export function extractAssetUrls(html: string): string[] {
-  const assetRegex = /src="(https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js)"/g;
-  return Array.from(html.matchAll(assetRegex), m => m[1]).filter(
-    (x): x is string => x != null,
-  );
+  const urls: string[] = [];
+  const re = /src="(https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    urls.push(m[1]);
+  }
+  return urls;
 }
 
 /**
@@ -25,12 +28,16 @@ export function findClientIdInChunk(chunk: string): string | null {
  * Downsample a waveform `samples` array to `targetWidth` buckets by averaging.
  */
 export function compressWaveform(samples: number[], targetWidth: number): number[] {
+  const n = samples.length;
+  const chunkSize = Math.ceil(n / targetWidth);
   const compressed: number[] = [];
-  const chunkSize = Math.ceil(samples.length / targetWidth);
-  for (let i = 0; i < samples.length; i += chunkSize) {
-    const chunk = samples.slice(i, i + chunkSize);
-    const avg = chunk.reduce((sum, v) => sum + v, 0) / chunk.length;
-    compressed.push(avg);
+  for (let i = 0; i < n; i += chunkSize) {
+    let sum = 0;
+    const end = Math.min(i + chunkSize, n);
+    for (let j = i; j < end; j++) {
+      sum += samples[j];
+    }
+    compressed.push(sum / (end - i));
   }
   return compressed;
 }
@@ -40,8 +47,15 @@ export function compressWaveform(samples: number[], targetWidth: number): number
  */
 export function normalizeWaveform(samples: number[], targetWidth: number): number[] {
   const compressed = compressWaveform(samples, targetWidth);
-  const maxVal = Math.max(...compressed) || 1;
-  return compressed.map(v => v / maxVal);
+  let maxVal = 0;
+  for (let i = 0; i < compressed.length; i++) {
+    if (compressed[i] > maxVal) maxVal = compressed[i];
+  }
+  maxVal = maxVal || 1;
+  for (let i = 0; i < compressed.length; i++) {
+    compressed[i] /= maxVal;
+  }
+  return compressed;
 }
 
 /**
@@ -51,27 +65,25 @@ export function renderAsciiWaveform(
   samples: number[],
   targetWidth = 75,
 ): { top: string; bottom: string } {
-  const maxVal = Math.max(...samples) || 1;
-  const compressed = compressWaveform(samples, targetWidth);
+  let maxVal = 0;
+  for (let i = 0; i < samples.length; i++) {
+    if (samples[i] > maxVal) maxVal = samples[i];
+  }
+  maxVal = maxVal || 1;
 
+  const compressed = compressWaveform(samples, targetWidth);
   const topSet = [" ", "▖", "▌"];
   const botSet = [" ", "▘", "▌"];
+  const setLen = topSet.length;
 
-  const top = compressed
-    .map(v => {
-      const norm = v / maxVal;
-      const index = Math.min(Math.floor(norm * topSet.length), topSet.length - 1);
-      return topSet[index];
-    })
-    .join("");
-
-  const bottom = compressed
-    .map(v => {
-      const norm = v / maxVal;
-      const index = Math.min(Math.floor(norm * botSet.length), botSet.length - 1);
-      return botSet[index];
-    })
-    .join("");
+  let top = "";
+  let bottom = "";
+  for (let i = 0; i < compressed.length; i++) {
+    const norm = compressed[i] / maxVal;
+    const index = Math.min((norm * setLen) | 0, setLen - 1);
+    top += topSet[index];
+    bottom += botSet[index];
+  }
 
   return { top, bottom };
 }
