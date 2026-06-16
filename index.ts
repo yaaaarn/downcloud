@@ -4,6 +4,7 @@ import { mkdir, unlink } from "node:fs/promises";
 import { secrets } from "bun";
 import { Command } from "commander";
 import chalk from "chalk";
+import { name, description, version } from './package.json'
 
 function extractAssetUrls(html: string): string[] {
   const urls: string[] = [];
@@ -441,9 +442,9 @@ async function downloadTrack(track: Track, clientId: string, oauthToken: string 
 const program = new Command();
 
 program
-  .name("downcloud")
-  .description("a simple (and fast) soundcloud downloader")
-  .version("1.0.0");
+  .name(name)
+  .description(description)
+  .version(version);
 
 program
   .command("set-token")
