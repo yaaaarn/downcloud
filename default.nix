@@ -6,6 +6,7 @@
   makeBinaryWrapper,
   ffmpeg,
   lib,
+  stdenv,
   ...
 }:
 let
@@ -29,10 +30,9 @@ in
     postInstall = (oldAttrs.postInstall or "") + ''
       wrapProgram $out/bin/downcloud \
         --prefix LD_LIBRARY_PATH : "${
-          lib.makeLibraryPath [
-            libsecret
-            glib
-          ]
+          lib.makeLibraryPath (
+            lib.optionals (!stdenv.isDarwin) [ libsecret ] ++ [ glib ]
+          )
         }" \
         --prefix PATH : "${lib.makeLibraryPath [ ffmpeg ]}"
     '';
