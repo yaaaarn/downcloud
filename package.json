@@ -1,5 +1,6 @@
 {
   "name": "downcloud",
+  "description": "a simple (and fast) soundcloud downloader",
   "module": "index.ts",
   "type": "module",
   "version": "1.0.0",
