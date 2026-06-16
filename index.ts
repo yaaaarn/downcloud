@@ -234,13 +234,24 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
   const dimmer = chalk.hex("#666666");
 
   let samples: number[] | undefined;
+  let preTop = "";
+  let preBot = "";
+  const waveWidth = 75;
+
   if (!debug && waveformUrl) {
     try {
       const res = await fetch(waveformUrl);
       if (res.ok) {
         const { samples: raw } = await res.json() as { samples: number[] };
         if (raw?.length) {
-          samples = normalizeWaveform(raw, 75);
+          samples = normalizeWaveform(raw, waveWidth);
+          const topSetW = [" ", "▖", "▌"];
+          const botSetW = [" ", "▘", "▌"];
+          for (let i = 0; i < waveWidth; i++) {
+            const val = samples[Math.floor((i / waveWidth) * samples.length)] || 0;
+            preTop += topSetW[val > 0.66 ? 2 : val > 0.33 ? 1 : 0];
+            preBot += botSetW[val > 0.66 ? 2 : val > 0.33 ? 1 : 0];
+          }
         }
       }
     } catch {}
@@ -267,9 +278,6 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
   const decoder = new TextDecoder();
   let buf = "";
 
-  const topSetW = [" ", "▖", "▌"];
-  const botSetW = [" ", "▘", "▌"];
-
   let elapsed = 0;
 
   const fmt = formatTime;
@@ -282,21 +290,9 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
       return;
     }
 
-    const width = 75;
-    let topLine = "";
-    let botLine = "";
-    for (let i = 0; i < width; i++) {
-      const val = samples[Math.floor((i / width) * samples.length)] || 0;
-      const topChar = topSetW[val > 0.66 ? 2 : val > 0.33 ? 1 : 0];
-      const botChar = botSetW[val > 0.66 ? 2 : val > 0.33 ? 1 : 0];
-      if (i / width < pct) {
-        topLine += bright(topChar);
-        botLine += pastel(botChar);
-      } else {
-        topLine += dim(topChar);
-        botLine += dimmer(botChar);
-      }
-    }
+    const idx = Math.min(Math.floor(pct * waveWidth), waveWidth);
+    const topLine = bright(preTop.slice(0, idx)) + dim(preTop.slice(idx));
+    const botLine = pastel(preBot.slice(0, idx)) + dimmer(preBot.slice(idx));
     process.stdout.write(`\r\x1b[K${timeStr}\n\x1b[K${topLine}\n\x1b[K${botLine}\x1b[A\x1b[A`);
   };
 
