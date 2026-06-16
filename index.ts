@@ -288,12 +288,11 @@ async function saveAudio(options: SaveAudioOptions) {
   const dim = chalk.hex("#555555");
   const dimmer = chalk.hex("#666666");
 
-  let waveformRows: { top: string; bottom: string } | null = null;
   const waveWidth = 75;
 
-  if (!debug && waveformUrl) {
-    waveformRows = await fetchWaveformRows(waveformUrl, waveWidth);
-  }
+  const waveformRowsPromise = (!debug && waveformUrl)
+    ? fetchWaveformRows(waveformUrl, waveWidth)
+    : Promise.resolve(null);
 
   if (debug) {
     const proc = Bun.spawn(args, { stdout: "inherit", stderr: "inherit" });
@@ -308,7 +307,10 @@ async function saveAudio(options: SaveAudioOptions) {
 
   args.push("-progress", "pipe:1", "-loglevel", "quiet");
 
-  const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+  const [waveformRows, proc] = await Promise.all([
+    waveformRowsPromise,
+    Promise.resolve(Bun.spawn(args, { stdout: "pipe", stderr: "pipe" })),
+  ]);
 
   process.stdout.write("\x1b[?25l");
 
