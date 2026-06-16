@@ -1,9 +1,29 @@
 import { join } from "path";
 import { tmpdir } from "os";
 import { mkdir, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { secrets } from "bun";
 import { Command } from "commander";
 import chalk from "chalk";
+
+function compressWaveform(samples: number[], targetWidth: number): number[] {
+  const n = samples.length;
+  const chunkSize = Math.ceil(n / targetWidth);
+  const compressed: number[] = [];
+  for (let i = 0; i < n; i += chunkSize) {
+    let sum = 0;
+    const end = Math.min(i + chunkSize, n);
+    for (let j = i; j < end; j++) {
+      sum += samples[j]!;
+    }
+    compressed.push(sum / (end - i));
+  }
+  return compressed;
+}
+
+function clampIndex(value: number, max: number): number {
+  return Math.min(Math.floor(value), max);
+}
 
 const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.114 Safari/537.36";
 const CACHE_FILE = join(process.env.HOME || ".", ".downcloud_client_id");
@@ -41,6 +61,35 @@ interface AudioMetadata {
   artworkUrl?: string;
 }
 
+interface SaveAudioOptions {
+  streamUrl: string;
+  isDownload: boolean;
+  customOutFile?: string;
+  user: { username: string; permalink: string };
+  permalink: string;
+  mimeType?: string;
+  debug?: boolean;
+  outDir?: string;
+  duration?: number;
+  waveformUrl?: string;
+  metadata?: AudioMetadata;
+}
+
+async function resolveOauthToken(tokenOption?: string): Promise<string | undefined> {
+  let token = tokenOption || process.env.SOUNDCLOUD_OAUTH_TOKEN;
+  try {
+    if (!token) {
+      token = (await secrets.get({
+        service: "downcloud",
+        name: "soundcloud-oauth-token",
+      })) || undefined;
+    }
+  } catch (e) {
+    token = undefined;
+  }
+  return token;
+}
+
 async function resolveClientId(): Promise<string> {
   let clientId = process.env.SOUNDCLOUD_CLIENT_ID;
   const cacheFile = Bun.file(CACHE_FILE);
@@ -53,40 +102,25 @@ async function resolveClientId(): Promise<string> {
     headers: { "User-Agent": userAgent },
   }).then(r => r.text());
 
-  const assetRegex = /src="(https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js)"/g;
-  const assetUrls = Array.from(html.matchAll(assetRegex), m => m[1]);
-  clientId = await findClientId(assetUrls.filter(x => x != null));
+  const re = /src="(https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js)"/g;
+  const assetUrls: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    assetUrls.push(m[1]!);
+  }
+  clientId = await findClientId(assetUrls);
   if (!clientId) throw new Error("could not find client_id");
   await cacheFile.write(clientId);
   return clientId;
 }
 
-async function resolveUrl(url: string, clientId: string): Promise<any> {
+async function resolveUrl(url: string, clientId: string): Promise<Record<string, unknown>> {
   const res = await fetch(
     `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(url)}&client_id=${clientId}`,
     { headers: { "User-Agent": userAgent } },
   );
   if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return await res.json();
-}
-
-function startSpinner(message: string) {
-  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-  let i = 0;
-
-  process.stdout.write("\x1b[?25l");
-  process.stdout.write(`${frames[0]} ${message}`);
-
-  const timer = setInterval(() => {
-    process.stdout.write(`\r${frames[i++ % frames.length]} ${message}`);
-  }, 80);
-
-  return {
-    stop: () => {
-      clearInterval(timer);
-      process.stdout.write("\r\x1b[K\x1b[?25h");
-    }
-  };
+  return await res.json() as Record<string, unknown>;
 }
 
 async function findClientIdInAsset(url: string, signal: AbortSignal) {
@@ -106,7 +140,7 @@ async function findClientIdInAsset(url: string, signal: AbortSignal) {
 
     const match = chunk.match(/client_id:"([a-zA-Z0-9]+)"/);
     if (match) {
-      return match[1];
+      return match[1]!;
     }
 
     if (chunk.length > 10000) {
@@ -132,53 +166,50 @@ async function findClientId(urls: string[]) {
   );
 }
 
-async function printAsciiWaveform(waveformUrl: string) {
+async function fetchWaveformRows(url: string, width: number): Promise<{ top: string; bottom: string } | null> {
   try {
-    const res = await fetch(waveformUrl);
-    if (!res.ok) return;
-
+    const res = await fetch(url);
+    if (!res.ok) return null;
     const { samples } = await res.json() as { samples: number[] };
-    if (!samples || samples.length === 0) return;
+    if (!samples?.length) return null;
 
-    const targetWidth = 75;
-    const maxVal = Math.max(...samples) || 1;
-
-    const compressed: number[] = [];
-    const chunkSize = Math.ceil(samples.length / targetWidth);
-
-    for (let i = 0; i < samples.length; i += chunkSize) {
-      const chunk = samples.slice(i, i + chunkSize);
-      const avg = chunk.reduce((sum, v) => sum + v, 0) / chunk.length;
-      compressed.push(avg);
+    const compressed = compressWaveform(samples, width);
+    let maxVal = 0;
+    for (let i = 0; i < compressed.length; i++) {
+      if (compressed[i]! > maxVal) maxVal = compressed[i]!;
     }
+    maxVal = maxVal || 1;
 
     const topSet = [" ", "▖", "▌"];
     const botSet = [" ", "▘", "▌"];
 
-    const topRow = compressed
-      .map(v => {
-        const norm = v / maxVal;
-        const index = Math.min(Math.floor(norm * topSet.length), topSet.length - 1);
-        return topSet[index];
-      })
-      .join("");
+    const top = compressed.map(v => {
+      const n = v / maxVal;
+      return topSet[clampIndex(n * topSet.length, topSet.length - 1)]!;
+    }).join("");
 
-    const bottomRow = compressed
-      .map(v => {
-        const norm = v / maxVal;
-        const index = Math.min(Math.floor(norm * botSet.length), botSet.length - 1);
-        return botSet[index];
-      })
-      .join("");
+    const bottom = compressed.map(v => {
+      const n = v / maxVal;
+      return botSet[clampIndex(n * botSet.length, botSet.length - 1)]!;
+    }).join("");
 
-    console.log()
-    console.log(topRow);
-    console.log(`${chalk.hex("#555555")(bottomRow)}\n`);
-
-  } catch (e) { }
+    return { top, bottom };
+  } catch {
+    return null;
+  }
 }
 
-async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: string | undefined, user: any, permalink: string, mimeType?: string, debug?: boolean, outDir?: string, duration?: number, waveformUrl?: string, metadata?: AudioMetadata) {
+async function printAsciiWaveform(waveformUrl: string) {
+  const rows = await fetchWaveformRows(waveformUrl, 75);
+  if (!rows) return;
+  console.log();
+  console.log(rows.top);
+  console.log(`${chalk.hex("#555555")(rows.bottom)}\n`);
+}
+
+async function saveAudio(options: SaveAudioOptions) {
+  const { streamUrl, isDownload, customOutFile, user, permalink, mimeType, debug, outDir, duration, waveformUrl, metadata } = options;
+
   let format = "";
 
   if (isDownload) {
@@ -188,22 +219,27 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
     format = mimeType;
   }
 
-  let outFile = customOutFile;
-  const isDefaultName = !outFile;
-  if (isDefaultName) {
-    outFile = `${user.permalink}_${permalink}`;
-    if (outDir) outFile = join(outDir, outFile);
-  }
+  const outFileBase = customOutFile || `${user.permalink}_${permalink}`;
+  const isDefaultName = !customOutFile;
+
+  const ext = format.includes("flac") ? ".flac"
+    : (format.includes("wav") || format.includes("x-wav") || format.includes("aiff")) ? ".flac"
+      : ".m4a";
+
+  let outFile = outDir ? join(outDir, outFileBase) : outFileBase;
+  if (isDefaultName) outFile += ext;
 
   let coverFile: string | undefined;
   if (metadata?.artworkUrl) {
     try {
       const res = await fetch(metadata.artworkUrl);
       if (res.ok) {
-        coverFile = join(tmpdir(), `downcloud_cover_${Date.now()}.jpg`);
+        coverFile = join(tmpdir(), `downcloud_cover_${randomUUID()}.jpg`);
         await Bun.write(coverFile, new Uint8Array(await res.arrayBuffer()));
       }
-    } catch {}
+    } catch (e) {
+      console.debug("failed to fetch cover art:", e);
+    }
   }
 
   const buildArgs = (): string[] => {
@@ -211,7 +247,6 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
     let args: string[];
 
     if (format.includes("flac")) {
-      if (isDefaultName) outFile += ".flac";
       args = ["ffmpeg", "-i", streamUrl];
       if (hasCover) {
         args.push("-i", coverFile!, "-map", "0:a", "-map", "1:v", "-c:a", "flac", "-compression_level", "8", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic");
@@ -219,7 +254,6 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
         args.push("-c", "copy");
       }
     } else if (format.includes("wav") || format.includes("x-wav") || format.includes("aiff")) {
-      if (isDefaultName) outFile += ".flac";
       args = ["ffmpeg", "-i", streamUrl];
       if (hasCover) {
         args.push("-i", coverFile!, "-map", "0:a", "-map", "1:v", "-c:a", "flac", "-compression_level", "8", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic");
@@ -227,7 +261,6 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
         args.push("-c:a", "flac", "-compression_level", "8", "-map_metadata", "0");
       }
     } else {
-      if (isDefaultName) outFile += ".m4a";
       args = ["ffmpeg", "-i", streamUrl];
       if (hasCover) {
         args.push("-i", coverFile!, "-map", "0:a", "-map", "1:v", "-c:a", "copy", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic", "-movflags", "+faststart");
@@ -244,7 +277,7 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
       if (metadata.url) args.push("-metadata", `url=${metadata.url}`);
     }
 
-    args.push("-y", outFile!);
+    args.push("-y", outFile);
     return args;
   };
 
@@ -255,25 +288,11 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
   const dim = chalk.hex("#555555");
   const dimmer = chalk.hex("#666666");
 
-  let samples: number[] | undefined;
+  let waveformRows: { top: string; bottom: string } | null = null;
+  const waveWidth = 75;
+
   if (!debug && waveformUrl) {
-    try {
-      const res = await fetch(waveformUrl);
-      if (res.ok) {
-        const { samples: raw } = await res.json() as { samples: number[] };
-        if (raw?.length) {
-          const targetWidth = 75;
-          const chunkSize = Math.ceil(raw.length / targetWidth);
-          const compressed: number[] = [];
-          for (let i = 0; i < raw.length; i += chunkSize) {
-            const chunk = raw.slice(i, i + chunkSize);
-            compressed.push(chunk.reduce((s, v) => s + v, 0) / chunk.length);
-          }
-          const maxVal = Math.max(...compressed) || 1;
-          samples = compressed.map(v => v / maxVal);
-        }
-      }
-    } catch {}
+    waveformRows = await fetchWaveformRows(waveformUrl, waveWidth);
   }
 
   if (debug) {
@@ -282,7 +301,7 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
     if (waveformUrl) {
       await printAsciiWaveform(waveformUrl);
     }
-    if (coverFile) await unlink(coverFile).catch(() => {});
+    if (coverFile) await unlink(coverFile).catch(() => { });
     console.log(`saved to ${outFile}`);
     return;
   }
@@ -297,39 +316,24 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
   const decoder = new TextDecoder();
   let buf = "";
 
-  const topSetW = [" ", "▖", "▌"];
-  const botSetW = [" ", "▘", "▌"];
-
   let elapsed = 0;
 
-  const fmt = (ms: number) => {
+  const ft = (ms: number) => {
     const sec = Math.floor(ms / 1000);
     return `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
   };
 
   const draw = (pct: number) => {
-    const timeStr = duration ? `${fmt(elapsed)} / ${fmt(duration)}` : `${Math.round(pct * 100)}%`;
+    const timeStr = duration ? `${ft(elapsed)} / ${ft(duration)}` : `${Math.round(pct * 100)}%`;
 
-    if (!samples) {
+    if (!waveformRows) {
       process.stdout.write(`\r\x1b[K${timeStr}\n\x1b[K${bright("▌".repeat(Math.max(0, Math.floor(pct * 75) - 1)))}\x1b[A`);
       return;
     }
 
-    const width = 75;
-    let topLine = "";
-    let botLine = "";
-    for (let i = 0; i < width; i++) {
-      const val = samples[Math.floor((i / width) * samples.length)] || 0;
-      const topChar = topSetW[val > 0.66 ? 2 : val > 0.33 ? 1 : 0];
-      const botChar = botSetW[val > 0.66 ? 2 : val > 0.33 ? 1 : 0];
-      if (i / width < pct) {
-        topLine += bright(topChar);
-        botLine += pastel(botChar);
-      } else {
-        topLine += dim(topChar);
-        botLine += dimmer(botChar);
-      }
-    }
+    const idx = clampIndex(pct * waveWidth, waveWidth);
+    const topLine = bright(waveformRows.top.slice(0, idx)) + dim(waveformRows.top.slice(idx));
+    const botLine = pastel(waveformRows.bottom.slice(0, idx)) + dimmer(waveformRows.bottom.slice(idx));
     process.stdout.write(`\r\x1b[K${timeStr}\n\x1b[K${topLine}\n\x1b[K${botLine}\x1b[A\x1b[A`);
   };
 
@@ -340,16 +344,18 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
     if (done) break;
     buf += decoder.decode(value, { stream: true });
 
-    if (duration) {
-      const m = buf.match(/out_time=(\d+):(\d+):(\d+)\.(\d+)/);
-      if (m) {
-        const cur = ((+m[1]! * 60 + +m[2]!) * 60 + +m[3]!) * 1000 + Math.round(+m[4]! / 1000);
-        elapsed = cur;
-        draw(Math.min(cur / duration, 1));
+    const lines = buf.split("\n");
+    buf = lines.pop()!;
+
+    for (const line of lines) {
+      if (line.startsWith("out_time_ms=")) {
+        const us = parseInt(line.slice("out_time_ms=".length));
+        if (!isNaN(us) && us > 0 && duration) {
+          elapsed = us / 1000;
+          draw(Math.min(elapsed / duration, 1));
+        }
       }
     }
-
-    if (buf.length > 100000) buf = buf.slice(-5000);
   }
 
   await proc.exited;
@@ -362,7 +368,7 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
   process.stdout.write("\x1b[?25h");
 
   console.log(`saved to ${outFile}`);
-  if (coverFile) await unlink(coverFile).catch(() => {});
+  if (coverFile) await unlink(coverFile).catch(() => { });
 }
 
 async function downloadTrack(track: Track, clientId: string, oauthToken: string | undefined, outDir?: string, debug?: boolean, albumName?: string, customOutFile?: string) {
@@ -403,7 +409,8 @@ async function downloadTrack(track: Track, clientId: string, oauthToken: string 
   }
 
   const trackUrl = `https://soundcloud.com/${user.permalink}/${permalink}`;
-  const artwork = artwork_url?.replace(/-(large|t\d+x\d+)(?=\.\w+)/, "-original");
+  const artwork = artwork_url ? artwork_url.replace(/-(large|t\d+x\d+)(?=\.\w+)/, "-original") : undefined;
+
 
   const metadata: AudioMetadata = {
     title,
@@ -414,15 +421,20 @@ async function downloadTrack(track: Track, clientId: string, oauthToken: string 
     artworkUrl: artwork,
   };
 
-  await saveAudio(streamUrl, isDownload, customOutFile, user, permalink, mimeType, debug, outDir, duration, waveform_url, metadata);
+  await saveAudio({
+    streamUrl, isDownload, customOutFile, user, permalink, mimeType, debug, outDir,
+    duration, waveformUrl: waveform_url, metadata,
+  });
 }
+
+const { version } = await Bun.file(join(import.meta.dir!, "package.json")).json() as { version: string };
 
 const program = new Command();
 
 program
   .name("downcloud")
   .description("a simple (and fast) soundcloud downloader")
-  .version("1.0.0");
+  .version(version);
 
 program
   .command("set-token")
@@ -435,8 +447,14 @@ program
       value: tokenArg,
     });
     console.log("soundcloud oauth token saved in keyring");
-    process.exit(0);
   });
+
+function validateUrl(url: string): void {
+  if (!url.includes("soundcloud.com")) {
+    console.error("error: url must be a soundcloud.com url");
+    process.exit(1);
+  }
+}
 
 program
   .command("track")
@@ -447,21 +465,21 @@ program
   .option("-o, --output <directory>", "output directory")
   .option("--debug", "print ffmpeg execution logs", false)
   .action(async (trackUrl, customOutFile, options) => {
+    validateUrl(trackUrl);
     const debug = options.debug;
-
-    let oauthToken = options.token || process.env.SOUNDCLOUD_OAUTH_TOKEN;
-    if (!oauthToken) {
-      oauthToken = await secrets.get({
-        service: "downcloud",
-        name: "soundcloud-oauth-token",
-      }) || undefined;
-    }
-
+    const oauthToken = await resolveOauthToken(options.token);
     const clientId = await resolveClientId();
-    const data = await resolveUrl(trackUrl, clientId) as Track;
+    const data = await resolveUrl(trackUrl, clientId) as unknown as Track;
 
     await downloadTrack(data, clientId, oauthToken, options.output, debug, undefined, customOutFile);
   });
+
+interface PlaylistData {
+  title: string;
+  user: { username: string; permalink: string };
+  permalink: string;
+  tracks: Track[];
+}
 
 program
   .command("playlist")
@@ -471,18 +489,11 @@ program
   .option("-o, --output <directory>", "output directory (default: playlist name)")
   .option("--debug", "print ffmpeg execution logs", false)
   .action(async (playlistUrl, options) => {
+    validateUrl(playlistUrl);
     const debug = options.debug;
-
-    let oauthToken = options.token || process.env.SOUNDCLOUD_OAUTH_TOKEN;
-    if (!oauthToken) {
-      oauthToken = await secrets.get({
-        service: "downcloud",
-        name: "soundcloud-oauth-token",
-      }) || undefined;
-    }
-
+    const oauthToken = await resolveOauthToken(options.token);
     const clientId = await resolveClientId();
-    const data = await resolveUrl(playlistUrl, clientId);
+    const data = await resolveUrl(playlistUrl, clientId) as unknown as PlaylistData;
 
     const { title, user, permalink, tracks } = data;
 
@@ -502,10 +513,12 @@ program
           try {
             const res = await fetch(`https://api-v2.soundcloud.com/tracks/${track.id}?client_id=${clientId}`);
             if (res.ok) {
-              const full = await res.json();
+              const full = await res.json() as Record<string, unknown>;
               Object.assign(track, full);
             }
-          } catch {}
+          } catch (e) {
+            console.debug("failed to fetch full track data:", e);
+          }
         }
       }
       if (!track.user || !track.media?.transcodings?.length) {
