@@ -4,11 +4,9 @@
   "type": "module",
   "version": "1.0.0",
   "devDependencies": {
-    "@codspeed/vitest-plugin": "^5.6.0",
     "@types/bun": "latest",
     "@types/commander": "^2.12.5",
-    "bun2nix": "^2.1.0",
-    "vitest": "^4.1.9"
+    "bun2nix": "^2.1.0"
   },
   "peerDependencies": {
     "typescript": "^5"
