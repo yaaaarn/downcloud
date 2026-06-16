@@ -25,7 +25,7 @@
         packages.default = pkgs.callPackage ./default.nix { bun2nix = bun2nix'; };
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [ pkg-config ];
-          buildInputs = with pkgs; [ libsecret ];
+          buildInputs = with pkgs; lib.optionals (!stdenv.isDarwin) [ libsecret ];
 
           packages = with pkgs; [
             bun
@@ -34,10 +34,9 @@
 
           shellHook = ''
             export LD_LIBRARY_PATH="${
-              pkgs.lib.makeLibraryPath [
-                pkgs.libsecret
-                pkgs.glib
-              ]
+              pkgs.lib.makeLibraryPath (
+                (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [ pkgs.libsecret ]) ++ [ pkgs.glib ]
+              )
             }:$LD_LIBRARY_PATH"
           '';
         };
