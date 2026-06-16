@@ -17,6 +17,7 @@
     "postinstall": "bunx bun2nix -o bun.nix"
   },
   "dependencies": {
+    "chalk": "^5.6.2",
     "commander": "^15.0.0"
   }
 }
