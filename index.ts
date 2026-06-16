@@ -306,29 +306,11 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
   const dim = chalk.hex("#555555");
   const dimmer = chalk.hex("#666666");
 
-  let samples: number[] | undefined;
-  let preTop = "";
-  let preBot = "";
   const waveWidth = 75;
 
-  if (!debug && waveformUrl) {
-    try {
-      const res = await fetch(waveformUrl);
-      if (res.ok) {
-        const { samples: raw } = await res.json() as { samples: number[] };
-        if (raw?.length) {
-          samples = normalizeWaveform(raw, waveWidth);
-          const topSetW = [" ", "▖", "▌"];
-          const botSetW = [" ", "▘", "▌"];
-          for (let i = 0; i < waveWidth; i++) {
-            const val = samples[Math.floor((i / waveWidth) * samples.length)] || 0;
-            preTop += topSetW[val > 0.66 ? 2 : val > 0.33 ? 1 : 0];
-            preBot += botSetW[val > 0.66 ? 2 : val > 0.33 ? 1 : 0];
-          }
-        }
-      }
-    } catch {}
-  }
+  const waveformRowsPromise = (!debug && waveformUrl)
+    ? fetchWaveformRows(waveformUrl, waveWidth)
+    : Promise.resolve(null);
 
   if (debug) {
     const proc = Bun.spawn(args, { stdout: "inherit", stderr: "inherit" });
@@ -343,7 +325,10 @@ async function saveAudio(streamUrl: string, isDownload: boolean, customOutFile: 
 
   args.push("-progress", "pipe:1", "-loglevel", "quiet");
 
-  const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+  const [waveformRows, proc] = await Promise.all([
+    waveformRowsPromise,
+    Promise.resolve(Bun.spawn(args, { stdout: "pipe", stderr: "pipe" })),
+  ]);
 
   process.stdout.write("\x1b[?25l");
 
