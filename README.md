@@ -2,6 +2,10 @@
 
 a simple (and fast) soundcloud downloader.
 
+## prerequisites
+
+- `ffmpeg`
+
 ## install
 
 ### run directly (no install)
