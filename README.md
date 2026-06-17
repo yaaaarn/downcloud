@@ -2,6 +2,15 @@
 
 a simple (and fast) soundcloud downloader.
 
+## benchmarks
+
+| command | `time` |
+|---|---|
+| `scdl -l https://soundcloud.com/hologura/yoho4` | `0.84s user 0.33s system 15% cpu 7.353 total` |
+| `downcloud track https://soundcloud.com/hologura/yoho4` | `0.19s user 0.21s system 28% cpu 1.403 total` |
+
+tested on apple m2 mac mini
+
 ## prerequisites
 
 - `ffmpeg`
