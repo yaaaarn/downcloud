@@ -39,6 +39,10 @@ downcloud set-token <your-token>
 
 you can also provide it on a per-command basis with `-t <token>` instead of saving it.
 
+> on darwin systems you may get an error if running via ssh, where the keychain cannot be unlocked.
+> running the command below will unlock the keychain:
+> ```security unlock-keychain ~/Library/Keychains/login.keychain-db```
+
 ## usage
 
 ```
