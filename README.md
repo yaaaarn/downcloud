@@ -84,14 +84,16 @@ usage: downcloud track [options] <url>
 download a track
 
 arguments:
-  url                       track url
-  outfile                   path to save output file
+  url                        track url
+  outfile                    path to save output file
 
 options:
-  -t, --token <string>      use a temporary soundcloud oauth token
-  -o, --output <directory>  output directory
-  --debug                   print ffmpeg execution logs (default: false)
-  -h, --help                display help for command
+  -t, --token <string>       use a temporary soundcloud oauth token
+  -o, --output <directory>   output directory
+  --download-archive <file>  download archive file (skip already archived tracks)
+  --sync <file>              sync archive file (download new, remove deleted, rewrite archive)
+  --debug                    print ffmpeg execution logs (default: false)
+  -h, --help                 display help for command
 ```
 
 ### playlist
@@ -102,13 +104,15 @@ usage: downcloud playlist [options] <url>
 download all tracks from a playlist
 
 arguments:
-  url                       playlist url
+  url                        playlist url
 
 options:
-  -t, --token <string>      use a temporary soundcloud oauth token
-  -o, --output <directory>  output directory (default: playlist name)
-  --debug                   print ffmpeg execution logs (default: false)
-  -h, --help                display help for command
+  -t, --token <string>       use a temporary soundcloud oauth token
+  -o, --output <directory>   output directory (default: playlist name)
+  --download-archive <file>  download archive file (skip already archived tracks)
+  --sync <file>              sync archive file (download new, remove deleted, rewrite archive)
+  --debug                    print ffmpeg execution logs (default: false)
+  -h, --help                 display help for command
 ```
 
 ### set-token
