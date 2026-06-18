@@ -90,6 +90,7 @@ arguments:
 options:
   -t, --token <string>       use a temporary soundcloud oauth token
   -o, --output <directory>   output directory
+  -f, --format <format>      output format (mp3, m4a, flac)
   --download-archive <file>  download archive file (skip already archived tracks)
   --sync <file>              sync archive file (download new, remove deleted, rewrite archive)
   --debug                    print ffmpeg execution logs (default: false)
@@ -109,6 +110,7 @@ arguments:
 options:
   -t, --token <string>       use a temporary soundcloud oauth token
   -o, --output <directory>   output directory (default: playlist name)
+  -f, --format <format>      output format (mp3, m4a, flac)
   --download-archive <file>  download archive file (skip already archived tracks)
   --sync <file>              sync archive file (download new, remove deleted, rewrite archive)
   --debug                    print ffmpeg execution logs (default: false)
