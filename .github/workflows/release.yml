@@ -24,7 +24,13 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > .npmrc
-          npm publish
+          published=$(npm view . version 2>/dev/null || echo "")
+          current=$(node -p "require('./package.json').version")
+          if [ "$published" != "$current" ]; then
+            npm publish
+          else
+            echo "Version $current already published, skipping"
+          fi
 
       - name: Build binaries
         run: |
