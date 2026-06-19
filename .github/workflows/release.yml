@@ -20,6 +20,10 @@ jobs:
 
       - run: bun run tsc --noEmit
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Publish to npm
         run: npm publish --provenance
 
