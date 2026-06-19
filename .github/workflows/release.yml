@@ -19,6 +19,13 @@ jobs:
 
       - run: bun run tsc --noEmit
 
+      - name: Publish to npm
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > .npmrc
+          npm publish
+
       - name: Build binaries
         run: |
           for target in \
