@@ -2,6 +2,24 @@
 
 a simple (and fast) soundcloud downloader.
 
+## table of contents
+
+- [benchmarks](#benchmarks)
+- [prerequisites](#prerequisites)
+- [install](#install)
+  - [run directly (no install)](#run-directly-no-install)
+  - [nix flake](#nix-flake)
+- [authentication](#authentication)
+- [usage](#usage)
+  - [track](#track)
+  - [playlist](#playlist)
+- [library api](#library-api)
+  - [track](#track-1)
+  - [playlist](#playlist-1)
+  - [exports](#exports)
+- [dev](#dev)
+- [license](#license)
+
 ## benchmarks
 
 ```
@@ -129,19 +147,48 @@ options:
   -h, --help                 display help for command
 ```
 
-### set-token
+## library api
 
+downcloud can also be used programmatically:
+
+### track
+
+```ts
+import { resolveClientId, resolveUrl, downloadTrack, type Track } from "downcloud";
+
+const clientId = await resolveClientId();
+const data = await resolveUrl("https://soundcloud.com/hologura/yoho4", clientId) as Track;
+const filePath = await downloadTrack(data, clientId);
+
+console.log(`saved to ${filePath}`);
 ```
-usage: downcloud set-token [options] <token>
 
-save a soundcloud oauth token into your keyring
+### playlist
 
-arguments:
-  token       soundcloud oauth token
+```ts
+import { resolveClientId, resolveUrl, downloadTrack, type PlaylistData } from "downcloud";
 
-options:
-  -h, --help  display help for command
+const clientId = await resolveClientId();
+const data = await resolveUrl("https://soundcloud.com/user/sets/playlist", clientId) as PlaylistData;
+
+for (const track of data.tracks) {
+  if (!track.media?.transcodings?.length) continue;
+  const filePath = await downloadTrack(track, clientId, undefined, data.title);
+  console.log(filePath);
+}
 ```
+
+### exports
+
+| export | description |
+|---|---|
+| `resolveClientId()` | resolve a soundcloud client id from their js assets |
+| `resolveOauthToken(token?)` | get oauth token from arg, env, or system keychain |
+| `resolveUrl(url, clientId)` | resolve a soundcloud url to track/playlist data |
+| `downloadTrack(track, clientId, oauthToken?, outDir?, debug?, albumName?, customOutFile?, outFormat?)` | download a track to a file |
+| `printAsciiWaveform(waveformUrl)` | print an ascii waveform to the console |
+| `ArchiveHelper` | class for download-archive / sync functionality |
+| `Track`, `Transcoding`, `AudioMetadata`, `SaveAudioOptions`, `PlaylistData` | type definitions |
 
 ## dev
 
