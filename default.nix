@@ -15,6 +15,7 @@ let
   };
 in
 (bun2nix.mkDerivation {
+  pname = "downcloud";
   packageJson = ./package.json;
   src = ./.;
   inherit bunDeps;
