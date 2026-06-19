@@ -4,6 +4,18 @@ a simple (and fast) soundcloud downloader.
 
 ## benchmarks
 
+```
+downcloud (1.0.0)      1.403s  █████
+yt-dlp (2026.03.17)    2.175s  ██████████
+soundcloud-dl (1.0.0)  6.434s  ██████████████████████████████
+scdl (3.0.5)           7.353s  ███████████████████████████████████
+```
+
+> tested on apple m2 mac mini
+
+<details>
+<summary>more data</summary>
+  
 | program | command | `time` |
 |---|---|---|
 | scdl (3.0.5) | `scdl -l https://soundcloud.com/hologura/yoho4` | `0.84s user 0.33s system 15% cpu 7.353 total` |
@@ -11,7 +23,7 @@ a simple (and fast) soundcloud downloader.
 | yt-dlp (2026.03.17) | `yt-dlp https://soundcloud.com/hologura/yoho4` | `0.73s user 0.21s system 43% cpu 2.175 total` |
 | soundcloud-dl (1.0.0) | `go run github.com/AYehia0/soundcloud-dl@latest https://soundcloud.com/hologura/yoho4 -b` | `0.28s user 0.45s system 11% cpu 6.434 total` |
 
-tested on apple m2 mac mini
+</details>
 
 ## prerequisites
 
