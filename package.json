@@ -1,9 +1,16 @@
 {
   "name": "downcloud",
   "description": "a simple (and fast) soundcloud downloader",
-  "module": "index.ts",
+  "module": "src/index.ts",
+  "types": "src/lib.ts",
   "type": "module",
   "version": "1.0.0",
+  "exports": {
+    ".": {
+      "import": "./src/lib.ts",
+      "types": "./src/lib.ts"
+    }
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/commander": "^2.12.5",
@@ -13,8 +20,8 @@
     "typescript": "^5"
   },
   "scripts": {
-    "start": "bun run index.ts",
-    "build": "bun build --compile --minify index.ts --outfile downcloud",
+    "start": "bun run src/index.ts",
+    "build": "bun build --compile --minify src/index.ts --outfile downcloud",
     "postinstall": "bunx bun2nix -o bun.nix"
   },
   "dependencies": {
