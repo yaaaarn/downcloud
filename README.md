@@ -5,13 +5,14 @@ a simple (and fast) soundcloud downloader.
 ## benchmarks
 
 ```
-downcloud (1.0.0)      1.403s  █████
-yt-dlp (2026.03.17)    2.175s  ██████████
-soundcloud-dl (1.0.0)  6.434s  ██████████████████████████████
-scdl (3.0.5)           7.353s  ███████████████████████████████████
+downcloud (1.0.0)      1.403s  ███████
+yt-dlp (2026.03.17)    2.175s  ███████████
+music-dl (0.2.1)       6.241s  ███████████████████████████████
+soundcloud-dl (1.0.0)  6.434s  ████████████████████████████████
+scdl (3.0.5)           7.353s  █████████████████████████████████████
 ```
 
-> tested on apple m2 mac mini
+> tested on apple m2 mac mini with 1gbps ethernet speed
 
 <details>
 <summary>more data</summary>
@@ -22,6 +23,7 @@ scdl (3.0.5)           7.353s  ████████████████�
 | downcloud (1.0.0) | `downcloud track https://soundcloud.com/hologura/yoho4` | `0.19s user 0.21s system 28% cpu 1.403 total` |
 | yt-dlp (2026.03.17) | `yt-dlp https://soundcloud.com/hologura/yoho4` | `0.73s user 0.21s system 43% cpu 2.175 total` |
 | soundcloud-dl (1.0.0) | `go run github.com/AYehia0/soundcloud-dl@latest https://soundcloud.com/hologura/yoho4 -b` | `0.28s user 0.45s system 11% cpu 6.434 total` |
+| music-dl (0.2.1) | `music-dl --url https://soundcloud.com/hologura/yoho4` | `3.47s user 0.56s system 64% cpu 6.241 total` |
 
 </details>
 
