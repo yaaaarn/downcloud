@@ -1,10 +1,13 @@
 {
-  "name": "downcloud",
+  "name": "@yaaaarn/downcloud",
   "description": "a simple (and fast) soundcloud downloader",
   "module": "src/index.ts",
   "types": "src/lib.ts",
   "type": "module",
   "version": "1.0.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "import": "./src/lib.ts",
@@ -19,10 +22,21 @@
   "peerDependencies": {
     "typescript": "^5"
   },
+  "bin": {
+    "downcloud": "src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "start": "bun run src/index.ts",
     "build": "bun build --compile --minify src/index.ts --outfile downcloud",
-    "postinstall": "bunx bun2nix -o bun.nix"
+    "prepublishOnly": "bun run tsc --noEmit",
+    "release:patch": "npm version patch && git push && git push --tags",
+    "release:minor": "npm version minor && git push && git push --tags",
+    "release:major": "npm version major && git push && git push --tags"
   },
   "dependencies": {
     "chalk": "^5.6.2",

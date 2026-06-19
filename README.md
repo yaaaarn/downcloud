@@ -1,5 +1,7 @@
 # ️️🌧️ downcloud
 
+[![npm](https://img.shields.io/npm/v/@yaaaarn/downcloud)](https://www.npmjs.com/package/@yaaaarn/downcloud)
+
 a simple (and fast) soundcloud downloader.
 
 ## table of contents
@@ -50,6 +52,19 @@ scdl (3.0.5)           7.353s  ████████████████�
 - `ffmpeg`
 
 ## install
+
+### npm
+
+```bash
+bunx @yaaaarn/downcloud track <url>
+```
+
+or install globally:
+
+```bash
+bun install -g @yaaaarn/downcloud
+downcloud track <url>
+```
 
 ### run directly (no install)
 
@@ -156,7 +171,7 @@ downcloud can also be used programmatically:
 ### track
 
 ```ts
-import { resolveClientId, resolveUrl, downloadTrack, type Track } from "downcloud";
+import { resolveClientId, resolveUrl, downloadTrack, type Track } from "@yaaaarn/downcloud";
 
 const clientId = await resolveClientId();
 const data = await resolveUrl("https://soundcloud.com/hologura/yoho4", clientId) as Track;
@@ -168,7 +183,7 @@ console.log(`saved to ${filePath}`);
 ### playlist
 
 ```ts
-import { resolveClientId, resolveUrl, downloadTrack, type PlaylistData } from "downcloud";
+import { resolveClientId, resolveUrl, downloadTrack, type PlaylistData } from "@yaaaarn/downcloud";
 
 const clientId = await resolveClientId();
 const data = await resolveUrl("https://soundcloud.com/user/sets/playlist", clientId) as PlaylistData;
