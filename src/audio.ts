@@ -57,7 +57,6 @@ function buildFfmpegArgs(
   }
 
   args.push("-y", outFile);
-  console.log(args)
   return args;
 }
 
