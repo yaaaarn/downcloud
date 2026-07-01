@@ -12,33 +12,31 @@ function buildFfmpegArgs(
   outFormat: string | undefined,
   metadata: AudioMetadata | undefined,
   outFile: string,
+  oauthToken?: string
 ): string[] {
   const hasCover = !!coverFile;
-  let args: string[];
+  let args: string[] = ["ffmpeg", "-i", streamUrl];
 
   if (outFormat === "mp3") {
-    args = ["ffmpeg", "-i", streamUrl];
     if (hasCover) {
       args.push("-i", coverFile!, "-map", "0:a", "-map", "1:v", "-c:a", "libmp3lame", "-q:a", "2", "-c:v", "mjpeg", "-id3v2_version", "3", "-disposition:v:0", "attached_pic");
     } else {
       args.push("-c:a", "libmp3lame", "-q:a", "2", "-map_metadata", "0");
     }
   } else if (sourceFormat.includes("flac")) {
-    args = ["ffmpeg", "-i", streamUrl];
     if (hasCover) {
       args.push("-i", coverFile!, "-map", "0:a", "-map", "1:v", "-c:a", "flac", "-compression_level", "8", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic");
     } else {
       args.push("-c", "copy");
     }
   } else if (sourceFormat.includes("wav") || sourceFormat.includes("x-wav") || sourceFormat.includes("aiff")) {
-    args = ["ffmpeg", "-i", streamUrl];
+
     if (hasCover) {
       args.push("-i", coverFile!, "-map", "0:a", "-map", "1:v", "-c:a", "flac", "-compression_level", "8", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic");
     } else {
       args.push("-c:a", "flac", "-compression_level", "8", "-map_metadata", "0");
     }
   } else {
-    args = ["ffmpeg", "-i", streamUrl];
     if (hasCover) {
       args.push("-i", coverFile!, "-map", "0:a", "-map", "1:v", "-c:a", "copy", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic", "-movflags", "+faststart");
     } else {
@@ -54,12 +52,17 @@ function buildFfmpegArgs(
     if (metadata.url) args.push("-metadata", `url=${metadata.url}`);
   }
 
+  if (oauthToken != null) {
+    args.push("-headers", `Authorization: OAuth ${oauthToken}`)
+  }
+
   args.push("-y", outFile);
+  console.log(args)
   return args;
 }
 
 async function saveAudio(options: SaveAudioOptions): Promise<string | undefined> {
-  const { streamUrl, isDownload, customOutFile, user, permalink, mimeType, debug, outDir, duration, waveformUrl, metadata } = options;
+  const { streamUrl, isDownload, customOutFile, user, permalink, mimeType, debug, outDir, duration, waveformUrl, metadata, oauthToken } = options;
 
   let format = "";
 
@@ -94,7 +97,7 @@ async function saveAudio(options: SaveAudioOptions): Promise<string | undefined>
     }
   }
 
-  let args = buildFfmpegArgs(streamUrl, coverFile, format, options.format, metadata, outFile);
+  let args = buildFfmpegArgs(streamUrl, coverFile, format, options.format, metadata, outFile, oauthToken);
 
   const waveformRowsPromise = (!debug && waveformUrl)
     ? fetchWaveformRows(waveformUrl, WAVE_WIDTH)
@@ -233,7 +236,7 @@ export async function downloadTrack(track: Track, clientId: string, oauthToken: 
       ?? media.transcodings.find(t => t.format.protocol === "hls");
     if (!hls) throw new Error(`no hls stream found for "${title}"`);
     mimeType = hls.format.mime_type;
-    streamUrl = (await fetch(`${hls.url}?client_id=${clientId}`).then(r => r.json()) as { url: string }).url;
+    streamUrl = (await fetch(`${hls.url}?client_id=${clientId}`, { headers: { Authorization: oauthToken != null ? `OAuth ${oauthToken}` : '' } }).then(r => r.json()) as { url: string }).url;
   }
 
   const coverFile = await coverFilePromise;
@@ -249,6 +252,6 @@ export async function downloadTrack(track: Track, clientId: string, oauthToken: 
 
   return await saveAudio({
     streamUrl, isDownload, customOutFile, user, permalink, mimeType, format: outFormat, debug, outDir,
-    duration, waveformUrl: waveform_url, metadata, coverFile,
+    duration, waveformUrl: waveform_url, metadata, coverFile, oauthToken
   });
 }

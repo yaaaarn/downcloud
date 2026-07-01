@@ -45,6 +45,7 @@ export interface SaveAudioOptions {
   duration?: number;
   waveformUrl?: string;
   metadata?: AudioMetadata;
+  oauthToken?: string
 }
 
 export interface PlaylistData {
