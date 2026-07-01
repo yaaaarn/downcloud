@@ -1,7 +1,6 @@
 import { Command } from "commander";
 import { secrets } from "bun";
 import { mkdir } from "node:fs/promises";
-import { join } from "path";
 import { name, description, version } from '../package.json'
 import { resolveOauthToken } from "./auth";
 import { resolveClientId } from "./auth";
@@ -53,7 +52,7 @@ program
     const debug = options.debug;
     const oauthToken = await resolveOauthToken(options.token);
     const clientId = await resolveClientId();
-    const data = await resolveUrl(trackUrl, clientId) as unknown as Track;
+    const data = await resolveUrl(trackUrl, clientId, oauthToken) as unknown as Track;
     const archiveFile = options.downloadArchive || options.sync;
 
     if (archiveFile) {
@@ -92,7 +91,7 @@ program
     const debug = options.debug;
     const oauthToken = await resolveOauthToken(options.token);
     const clientId = await resolveClientId();
-    const data = await resolveUrl(playlistUrl, clientId) as unknown as PlaylistData;
+    const data = await resolveUrl(playlistUrl, clientId, oauthToken) as unknown as PlaylistData;
 
     const { title, user, permalink, tracks } = data;
 
