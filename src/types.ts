@@ -48,6 +48,17 @@ export interface SaveAudioOptions {
   oauthToken?: string
 }
 
+export interface User {
+  id: number;
+  username: string;
+  permalink: string;
+}
+
+export interface ArtistData {
+  user: User;
+  tracks: Track[];
+}
+
 export interface PlaylistData {
   title: string;
   user: { username: string; permalink: string };

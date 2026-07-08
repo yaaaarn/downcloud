@@ -15,9 +15,11 @@ a simple (and fast) soundcloud downloader.
 - [usage](#usage)
   - [track](#track)
   - [playlist](#playlist)
+  - [artist](#artist)
 - [library api](#library-api)
   - [track](#track-1)
   - [playlist](#playlist-1)
+  - [artist](#artist-1)
   - [exports](#exports)
 - [dev](#dev)
 - [license](#license)
@@ -120,6 +122,7 @@ commands:
   set-token <token>         save a soundcloud oauth token into your keyring
   track [options] <url>     download a track
   playlist [options] <url>  download all tracks from a playlist
+  artist [options] <url>    download all tracks from an artist
   help [command]            display help for command
 ```
 
@@ -164,6 +167,26 @@ options:
   -h, --help                 display help for command
 ```
 
+### artist
+
+```
+usage: downcloud artist [options] <url>
+
+download all tracks from an artist
+
+arguments:
+  url                        artist url
+
+options:
+  -t, --token <string>       use a temporary soundcloud oauth token
+  -o, --output <directory>   output directory (default: artist name)
+  -f, --format <format>      output format (mp3, m4a, flac)
+  --download-archive <file>  download archive file (skip already archived tracks)
+  --sync <file>              sync archive file (download new, remove deleted, rewrite archive)
+  --debug                    print ffmpeg execution logs (default: false)
+  -h, --help                 display help for command
+```
+
 ## library api
 
 downcloud can also be used programmatically:
@@ -195,6 +218,21 @@ for (const track of data.tracks) {
 }
 ```
 
+### artist
+
+```ts
+import { resolveClientId, fetchArtistTracks, downloadTrack } from "@yaaaarn/downcloud";
+
+const clientId = await resolveClientId();
+const { user, tracks } = await fetchArtistTracks("https://soundcloud.com/hologura", clientId);
+
+for (const track of tracks) {
+  if (!track.media?.transcodings?.length) continue;
+  const filePath = await downloadTrack(track, clientId, undefined, user.permalink);
+  console.log(filePath);
+}
+```
+
 ### exports
 
 | export | description |
@@ -202,10 +240,11 @@ for (const track of data.tracks) {
 | `resolveClientId()` | resolve a soundcloud client id from their js assets |
 | `resolveOauthToken(token?)` | get oauth token from arg, env, or system keychain |
 | `resolveUrl(url, clientId)` | resolve a soundcloud url to track/playlist data |
+| `fetchArtistTracks(url, clientId)` | fetch all tracks from an artist |
 | `downloadTrack(track, clientId, oauthToken?, outDir?, debug?, albumName?, customOutFile?, outFormat?)` | download a track to a file |
 | `printAsciiWaveform(waveformUrl)` | print an ascii waveform to the console |
 | `ArchiveHelper` | class for download-archive / sync functionality |
-| `Track`, `Transcoding`, `AudioMetadata`, `SaveAudioOptions`, `PlaylistData` | type definitions |
+| `Track`, `Transcoding`, `AudioMetadata`, `SaveAudioOptions`, `PlaylistData`, `User`, `ArtistData` | type definitions |
 
 ## dev
 

@@ -4,7 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { name, description, version } from '../package.json'
 import { resolveOauthToken } from "./auth";
 import { resolveClientId } from "./auth";
-import { resolveUrl } from "./api";
+import { resolveUrl, fetchArtistTracks } from "./api";
 import { downloadTrack } from "./audio";
 import type { Track, PlaylistData } from "./types";
 import { ArchiveHelper } from "./archive";
@@ -138,6 +138,85 @@ program
 
       try {
         const filePath = await downloadTrack(track, clientId, oauthToken, outDir, debug, title, undefined, options.format);
+        if (!filePath) throw new Error('an error occurred')
+        if (archive) {
+          if (options.downloadArchive) {
+            await archive.append(track.id, filePath);
+          } else if (options.sync) {
+            archive.markProcessed(track.id, filePath);
+          }
+        }
+        console.log();
+      } catch (e) {
+        console.error(`failed: ${track.title}: ${e}`);
+      }
+    }
+
+    if (options.sync && archive) {
+      await archive.finalize();
+    }
+  });
+
+program
+  .command("artist")
+  .description("download all tracks from an artist")
+  .argument("<url>", "artist url")
+  .option("-t, --token <string>", "use a temporary soundcloud oauth token")
+  .option("-o, --output <directory>", "output directory (default: artist name)")
+  .option("-f, --format <format>", "output format (mp3, m4a, flac)")
+  .option("--download-archive <file>", "download archive file (skip already archived tracks)")
+  .option("--sync <file>", "sync archive file (download new, remove deleted, rewrite archive)")
+  .option("--debug", "print ffmpeg execution logs", false)
+  .action(async (artistUrl, options) => {
+    validateUrl(artistUrl);
+    const debug = options.debug;
+    const oauthToken = await resolveOauthToken(options.token);
+    const clientId = await resolveClientId();
+    const { user, tracks } = await fetchArtistTracks(artistUrl, clientId, oauthToken);
+
+    if (!tracks || tracks.length === 0) {
+      console.log("no tracks found for this artist");
+      return;
+    }
+
+    const outDir = options.output || user.permalink;
+    await mkdir(outDir, { recursive: true });
+
+    console.log(`artist: ${user.username} — ${tracks.length} tracks\n`);
+
+    const archiveFile = options.downloadArchive || options.sync;
+    const archive = archiveFile ? new ArchiveHelper(archiveFile) : undefined;
+    if (archive) await archive.init();
+
+    for (const track of tracks) {
+      if (!track.user || !track.media?.transcodings?.length) {
+        if (track.id) {
+          try {
+            const res = await fetch(`https://api-v2.soundcloud.com/tracks/${track.id}?client_id=${clientId}`);
+            if (res.ok) {
+              const full = await res.json() as Record<string, unknown>;
+              Object.assign(track, full);
+            }
+          } catch (e) {
+            console.debug("failed to fetch full track data:", e);
+          }
+        }
+      }
+      if (!track.user || !track.media?.transcodings?.length) {
+        console.error(`skipped: ${track.title || track.id || "unknown"} (no data)`);
+        continue;
+      }
+
+      if (archive?.isArchived(track.id)) {
+        if (options.sync) {
+          archive.markProcessed(track.id, archive.getPath(track.id)!);
+        }
+        console.log(`${track.title} is already in archive, skipping`);
+        continue;
+      }
+
+      try {
+        const filePath = await downloadTrack(track, clientId, oauthToken, outDir, debug, undefined, undefined, options.format);
         if (!filePath) throw new Error('an error occurred')
         if (archive) {
           if (options.downloadArchive) {

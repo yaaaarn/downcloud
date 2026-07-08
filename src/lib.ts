@@ -1,6 +1,6 @@
-export type { Transcoding, Track, AudioMetadata, SaveAudioOptions, PlaylistData } from "./types";
+export type { Transcoding, Track, AudioMetadata, SaveAudioOptions, PlaylistData, User, ArtistData } from "./types";
 export { resolveOauthToken, resolveClientId } from "./auth";
-export { resolveUrl } from "./api";
+export { resolveUrl, fetchArtistTracks } from "./api";
 export { downloadTrack } from "./audio";
 export { ArchiveHelper } from "./archive";
 export { printAsciiWaveform } from "./waveform";
