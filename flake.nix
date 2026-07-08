@@ -14,7 +14,7 @@
       nixpkgs,
       flake-utils,
       bun2nix,
-    }@inputs:
+    }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
