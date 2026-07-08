@@ -20,11 +20,17 @@ export async function fetchArtistTracks(url: string, clientId: string, oauthToke
   while (nextUrl) {
     const res = await fetch(nextUrl, {
       headers: { "User-Agent": userAgent, Authorization: oauthToken != null ? `OAuth ${oauthToken}` : '' },
-    });
+    }); 
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     const data = await res.json() as { collection: Track[]; next_href?: string };
     tracks.push(...data.collection);
     nextUrl = data.next_href ?? null;
+    
+    if (nextUrl != null) {
+      const url = new URL(nextUrl)
+      url.searchParams.append('client_id', clientId)
+      nextUrl = url.toString()
+    } 
   }
 
   return { user, tracks };
