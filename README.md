@@ -13,6 +13,7 @@ a simple (and fast) soundcloud downloader.
   - [nix flake](#nix-flake)
 - [authentication](#authentication)
 - [usage](#usage)
+  - [download (auto-detect)](#download-auto-detect)
   - [track](#track)
   - [playlist](#playlist)
   - [artist](#artist)
@@ -20,6 +21,7 @@ a simple (and fast) soundcloud downloader.
   - [track](#track-1)
   - [playlist](#playlist-1)
   - [artist](#artist-1)
+  - [low-level api](#low-level-api)
   - [exports](#exports)
 - [dev](#dev)
 - [license](#license)
@@ -27,8 +29,8 @@ a simple (and fast) soundcloud downloader.
 ## benchmarks
 
 ```
-downcloud (1.0.0)      1.403s  ███████
-yt-dlp (2026.03.17)    2.175s  ███████████
+downcloud (2.0.0)      0.851s  █████
+yt-dlp (2026.03.17)    2.836s  ███████████████████
 music-dl (0.2.1)       6.241s  ███████████████████████████████
 soundcloud-dl (1.0.0)  6.434s  ████████████████████████████████
 scdl (3.0.5)           7.353s  █████████████████████████████████████
@@ -42,8 +44,8 @@ scdl (3.0.5)           7.353s  ████████████████�
 | program | command | `time` |
 |---|---|---|
 | scdl (3.0.5) | `scdl -l https://soundcloud.com/hologura/yoho4` | `0.84s user 0.33s system 15% cpu 7.353 total` |
-| downcloud (1.0.0) | `downcloud track https://soundcloud.com/hologura/yoho4` | `0.19s user 0.21s system 28% cpu 1.403 total` |
-| yt-dlp (2026.03.17) | `yt-dlp https://soundcloud.com/hologura/yoho4` | `0.73s user 0.21s system 43% cpu 2.175 total` |
+| downcloud (2.0.0) | `downcloud https://soundcloud.com/hologura/yoho4` | `0.32s user 0.08s system 47% cpu 0.851 total` |
+| yt-dlp (2026.03.17) | `yt-dlp https://soundcloud.com/hologura/yoho4` | `1.30s user 0.20s system 53% cpu 2.836 total` |
 | soundcloud-dl (1.0.0) | `go run github.com/AYehia0/soundcloud-dl@latest https://soundcloud.com/hologura/yoho4 -b` | `0.28s user 0.45s system 11% cpu 6.434 total` |
 | music-dl (0.2.1) | `music-dl --url https://soundcloud.com/hologura/yoho4` | `3.47s user 0.56s system 64% cpu 6.241 total` |
 
@@ -58,14 +60,14 @@ scdl (3.0.5)           7.353s  ████████████████�
 ### npm
 
 ```bash
-bunx @yaaaarn/downcloud track <url>
+bunx @yaaaarn/downcloud <url>
 ```
 
 or install globally:
 
 ```bash
 bun install -g @yaaaarn/downcloud
-downcloud track <url>
+downcloud <url>
 ```
 
 ### run directly (no install)
@@ -110,13 +112,23 @@ you can also provide it on a per-command basis with `-t <token>` instead of savi
 ## usage
 
 ```
-usage: downcloud [options] [command]
+usage: downcloud [options] [url] [command]
 
 a simple (and fast) soundcloud downloader
 
+arguments:
+  url                        soundcloud url (auto-detects track, playlist, or artist)
+  outfile                    path to save output file (tracks only)
+
 options:
-  -V, --version             output the version number
-  -h, --help                display help for command
+  -t, --token <string>       use a temporary soundcloud oauth token
+  -o, --output <directory>   output directory
+  -f, --format <format>      output format (mp3, m4a, flac)
+  --download-archive <file>  download archive file (skip already archived tracks)
+  --sync <file>              sync archive file (download new, remove deleted, rewrite archive)
+  --debug                    print ffmpeg execution logs (default: false)
+  -V, --version              output the version number
+  -h, --help                 display help for command
 
 commands:
   set-token <token>         save a soundcloud oauth token into your keyring
@@ -124,6 +136,22 @@ commands:
   playlist [options] <url>  download all tracks from a playlist
   artist [options] <url>    download all tracks from an artist
   help [command]            display help for command
+```
+
+### download (auto-detect)
+
+pass any soundcloud url and downcloud will detect whether it's a track, playlist, or artist:
+
+```bash
+downcloud https://soundcloud.com/hologura/yoho4
+downcloud https://soundcloud.com/user/sets/playlist
+downcloud https://soundcloud.com/hologura
+```
+
+all the same options are available:
+
+```bash
+downcloud https://soundcloud.com/hologura/yoho4 -o ./music -f flac
 ```
 
 ### track
@@ -189,16 +217,15 @@ options:
 
 ## library api
 
-downcloud can also be used programmatically:
+downcloud can also be used programmatically. the simplest way is with `createClient`:
 
 ### track
 
 ```ts
-import { resolveClientId, resolveUrl, downloadTrack, type Track } from "@yaaaarn/downcloud";
+import { createClient } from "@yaaaarn/downcloud";
 
-const clientId = await resolveClientId();
-const data = await resolveUrl("https://soundcloud.com/hologura/yoho4", clientId) as Track;
-const filePath = await downloadTrack(data, clientId);
+const client = await createClient();
+const { filePath } = await client.download("https://soundcloud.com/hologura/yoho4");
 
 console.log(`saved to ${filePath}`);
 ```
@@ -206,14 +233,12 @@ console.log(`saved to ${filePath}`);
 ### playlist
 
 ```ts
-import { resolveClientId, resolveUrl, downloadTrack, type PlaylistData } from "@yaaaarn/downcloud";
+import { createClient } from "@yaaaarn/downcloud";
 
-const clientId = await resolveClientId();
-const data = await resolveUrl("https://soundcloud.com/user/sets/playlist", clientId) as PlaylistData;
+const client = await createClient();
+const { results, errors } = await client.downloadPlaylist("https://soundcloud.com/user/sets/playlist");
 
-for (const track of data.tracks) {
-  if (!track.media?.transcodings?.length) continue;
-  const filePath = await downloadTrack(track, clientId, undefined, data.title);
+for (const { filePath } of results) {
   console.log(filePath);
 }
 ```
@@ -221,30 +246,40 @@ for (const track of data.tracks) {
 ### artist
 
 ```ts
-import { resolveClientId, fetchArtistTracks, downloadTrack } from "@yaaaarn/downcloud";
+import { createClient } from "@yaaaarn/downcloud";
 
-const clientId = await resolveClientId();
-const { user, tracks } = await fetchArtistTracks("https://soundcloud.com/hologura", clientId);
+const client = await createClient();
+const { results, errors } = await client.downloadArtist("https://soundcloud.com/hologura");
 
-for (const track of tracks) {
-  if (!track.media?.transcodings?.length) continue;
-  const filePath = await downloadTrack(track, clientId, undefined, user.permalink);
+for (const { filePath } of results) {
   console.log(filePath);
 }
+```
+
+### low-level api
+
+if you need more control, you can use the individual functions directly:
+
+```ts
+import { resolveClientId, resolveUrl, downloadTrack, type Track } from "@yaaaarn/downcloud";
+
+const clientId = await resolveClientId();
+const data = await resolveUrl("https://soundcloud.com/hologura/yoho4", clientId) as Track;
+const filePath = await downloadTrack(data, { clientId });
 ```
 
 ### exports
 
 | export | description |
 |---|---|
+| `createClient(options?)` | create a pre-configured client with resolved credentials |
 | `resolveClientId()` | resolve a soundcloud client id from their js assets |
 | `resolveOauthToken(token?)` | get oauth token from arg, env, or system keychain |
 | `resolveUrl(url, clientId)` | resolve a soundcloud url to track/playlist data |
 | `fetchArtistTracks(url, clientId)` | fetch all tracks from an artist |
-| `downloadTrack(track, clientId, oauthToken?, outDir?, debug?, albumName?, customOutFile?, outFormat?)` | download a track to a file |
+| `downloadTrack(track, options)` | download a track to a file |
 | `printAsciiWaveform(waveformUrl)` | print an ascii waveform to the console |
 | `ArchiveHelper` | class for download-archive / sync functionality |
-| `Track`, `Transcoding`, `AudioMetadata`, `SaveAudioOptions`, `PlaylistData`, `User`, `ArtistData` | type definitions |
 
 ## dev
 

@@ -24,6 +24,180 @@ program
   .version(version);
 
 program
+  .argument("[url]", "soundcloud url (auto-detects track, playlist, or artist)")
+  .argument("[outfile]", "path to save output file (tracks only)")
+  .option("-t, --token <string>", "use a temporary soundcloud oauth token")
+  .option("-o, --output <directory>", "output directory")
+  .option("-f, --format <format>", "output format (mp3, m4a, flac)")
+  .option("--download-archive <file>", "download archive file (skip already archived tracks)")
+  .option("--sync <file>", "sync archive file (download new, remove deleted, rewrite archive)")
+  .option("--debug", "print ffmpeg execution logs", false)
+  .action(async (url, customOutFile, options) => {
+    if (!url) {
+      program.help();
+    }
+
+    validateUrl(url);
+    const debug = options.debug;
+    const oauthToken = await resolveOauthToken(options.token);
+    const clientId = await resolveClientId();
+    const result = await resolveUrl(url, clientId, oauthToken);
+
+    const archiveFile = options.downloadArchive || options.sync;
+
+    if ("media" in result) {
+      const data = result as unknown as Track;
+      if (archiveFile) {
+        const archive = new ArchiveHelper(archiveFile);
+        await archive.init();
+        if (archive.isArchived(data.id)) {
+          console.log(`${data.title} is already in archive, skipping`);
+          return;
+        }
+        const filePath = await downloadTrack(data, { clientId, oauthToken, outDir: options.output, debug, customOutFile, format: options.format });
+        if (!filePath) throw new Error('an error occurred')
+        if (options.downloadArchive) {
+          await archive.append(data.id, filePath);
+        }
+        if (options.sync) {
+          archive.markProcessed(data.id, filePath);
+          await archive.finalize();
+        }
+      } else {
+        await downloadTrack(data, { clientId, oauthToken, outDir: options.output, debug, customOutFile, format: options.format });
+      }
+    } else if ("tracks" in result) {
+      const data = result as unknown as PlaylistData;
+      const { title, user, permalink, tracks } = data;
+
+      if (!tracks || tracks.length === 0) {
+        console.log("playlist is empty");
+        return;
+      }
+
+      const outDir = options.output || `${user.permalink}_${permalink}`;
+      await mkdir(outDir, { recursive: true });
+
+      console.log(`playlist: ${title} — ${tracks.length} tracks\n`);
+
+      const archive = archiveFile ? new ArchiveHelper(archiveFile) : undefined;
+      if (archive) await archive.init();
+
+      for (const track of tracks) {
+        if (!track.user || !track.media?.transcodings?.length) {
+          if (track.id) {
+            try {
+              const res = await fetch(`https://api-v2.soundcloud.com/tracks/${track.id}?client_id=${clientId}`);
+              if (res.ok) {
+                const full = await res.json() as Record<string, unknown>;
+                Object.assign(track, full);
+              }
+            } catch (e) {
+              console.debug("failed to fetch full track data:", e);
+            }
+          }
+        }
+        if (!track.user || !track.media?.transcodings?.length) {
+          console.error(`skipped: ${track.title || track.id || "unknown"} (no data)`);
+          continue;
+        }
+
+        if (archive?.isArchived(track.id)) {
+          if (options.sync) {
+            archive.markProcessed(track.id, archive.getPath(track.id)!);
+          }
+          console.log(`${track.title} is already in archive, skipping`);
+          continue;
+        }
+
+        try {
+          const filePath = await downloadTrack(track, { clientId, oauthToken, outDir, debug, album: title, format: options.format });
+          if (!filePath) throw new Error('an error occurred')
+          if (archive) {
+            if (options.downloadArchive) {
+              await archive.append(track.id, filePath);
+            } else if (options.sync) {
+              archive.markProcessed(track.id, filePath);
+            }
+          }
+          console.log();
+        } catch (e) {
+          console.error(`failed: ${track.title}: ${e}`);
+        }
+      }
+
+      if (options.sync && archive) {
+        await archive.finalize();
+      }
+    } else if ("username" in result && "permalink" in result) {
+      const { user, tracks } = await fetchArtistTracks(url, clientId, oauthToken);
+
+      if (!tracks || tracks.length === 0) {
+        console.log("no tracks found for this artist");
+        return;
+      }
+
+      const outDir = options.output || user.permalink;
+      await mkdir(outDir, { recursive: true });
+
+      console.log(`artist: ${user.username} — ${tracks.length} tracks\n`);
+
+      const archive = archiveFile ? new ArchiveHelper(archiveFile) : undefined;
+      if (archive) await archive.init();
+
+      for (const track of tracks) {
+        if (!track.user || !track.media?.transcodings?.length) {
+          if (track.id) {
+            try {
+              const res = await fetch(`https://api-v2.soundcloud.com/tracks/${track.id}?client_id=${clientId}`);
+              if (res.ok) {
+                const full = await res.json() as Record<string, unknown>;
+                Object.assign(track, full);
+              }
+            } catch (e) {
+              console.debug("failed to fetch full track data:", e);
+            }
+          }
+        }
+        if (!track.user || !track.media?.transcodings?.length) {
+          console.error(`skipped: ${track.title || track.id || "unknown"} (no data)`);
+          continue;
+        }
+
+        if (archive?.isArchived(track.id)) {
+          if (options.sync) {
+            archive.markProcessed(track.id, archive.getPath(track.id)!);
+          }
+          console.log(`${track.title} is already in archive, skipping`);
+          continue;
+        }
+
+        try {
+          const filePath = await downloadTrack(track, { clientId, oauthToken, outDir, debug, format: options.format });
+          if (!filePath) throw new Error('an error occurred')
+          if (archive) {
+            if (options.downloadArchive) {
+              await archive.append(track.id, filePath);
+            } else if (options.sync) {
+              archive.markProcessed(track.id, filePath);
+            }
+          }
+          console.log();
+        } catch (e) {
+          console.error(`failed: ${track.title}: ${e}`);
+        }
+      }
+
+      if (options.sync && archive) {
+        await archive.finalize();
+      }
+    } else {
+      console.error("error: could not determine url type");
+      process.exit(1);
+    }
+  });
+
+program
   .command("set-token")
   .description("save a soundcloud oauth token into your keyring")
   .argument("<token>", "soundcloud oauth token")
@@ -62,7 +236,7 @@ program
         console.log(`${data.title} is already in archive, skipping`);
         return;
       }
-      const filePath = await downloadTrack(data, clientId, oauthToken, options.output, debug, undefined, customOutFile, options.format);
+      const filePath = await downloadTrack(data, { clientId, oauthToken, outDir: options.output, debug, customOutFile, format: options.format });
       if (!filePath) throw new Error('an error occurred')
       if (options.downloadArchive) {
         await archive.append(data.id, filePath);
@@ -72,7 +246,7 @@ program
         await archive.finalize();
       }
     } else {
-      await downloadTrack(data, clientId, oauthToken, options.output, debug, undefined, customOutFile, options.format);
+      await downloadTrack(data, { clientId, oauthToken, outDir: options.output, debug, customOutFile, format: options.format });
     }
   });
 
@@ -137,7 +311,7 @@ program
       }
 
       try {
-        const filePath = await downloadTrack(track, clientId, oauthToken, outDir, debug, title, undefined, options.format);
+        const filePath = await downloadTrack(track, { clientId, oauthToken, outDir, debug, album: title, format: options.format });
         if (!filePath) throw new Error('an error occurred')
         if (archive) {
           if (options.downloadArchive) {
@@ -216,7 +390,7 @@ program
       }
 
       try {
-        const filePath = await downloadTrack(track, clientId, oauthToken, outDir, debug, undefined, undefined, options.format);
+        const filePath = await downloadTrack(track, { clientId, oauthToken, outDir, debug, format: options.format });
         if (!filePath) throw new Error('an error occurred')
         if (archive) {
           if (options.downloadArchive) {

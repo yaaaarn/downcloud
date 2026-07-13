@@ -65,3 +65,54 @@ export interface PlaylistData {
   permalink: string;
   tracks: Track[];
 }
+
+export type ResolveResult = Track | PlaylistData | ArtistData;
+
+export interface DownloadOptions {
+  clientId: string;
+  oauthToken?: string;
+  outDir?: string;
+  debug?: boolean;
+  format?: string;
+  album?: string;
+  customOutFile?: string;
+}
+
+export interface DownloadPlaylistOptions {
+  clientId: string;
+  oauthToken?: string;
+  outDir?: string;
+  debug?: boolean;
+  format?: string;
+  archiveFile?: string;
+  syncFile?: string;
+}
+
+export interface DownloadArtistOptions {
+  clientId: string;
+  oauthToken?: string;
+  outDir?: string;
+  debug?: boolean;
+  format?: string;
+  archiveFile?: string;
+  syncFile?: string;
+}
+
+export interface DownloadResult {
+  filePath: string | undefined;
+  track: Track;
+}
+
+export interface PlaylistDownloadResult {
+  results: DownloadResult[];
+  errors: { track: Track; error: unknown }[];
+}
+
+export interface SoundCloudClient {
+  clientId: string;
+  oauthToken: string | undefined;
+  resolve: (url: string) => Promise<ResolveResult>;
+  download: (url: string, opts?: Omit<DownloadOptions, "clientId">) => Promise<DownloadResult>;
+  downloadPlaylist: (url: string, opts?: Omit<DownloadPlaylistOptions, "clientId">) => Promise<PlaylistDownloadResult>;
+  downloadArtist: (url: string, opts?: Omit<DownloadArtistOptions, "clientId">) => Promise<PlaylistDownloadResult>;
+}

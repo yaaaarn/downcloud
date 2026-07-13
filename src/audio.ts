@@ -2,7 +2,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "node:crypto";
 import { WAVE_WIDTH, bright, pastel, dim, dimmer, userAgent } from "./constants";
-import type { SaveAudioOptions, AudioMetadata, Track } from "./types";
+import type { SaveAudioOptions, AudioMetadata, Track, DownloadOptions } from "./types";
 import { fetchWaveformRows, printAsciiWaveform, clampIndex } from "./waveform";
 
 function buildFfmpegArgs(
@@ -182,7 +182,8 @@ async function saveAudio(options: SaveAudioOptions): Promise<string | undefined>
   return outFile;
 }
 
-export async function downloadTrack(track: Track, clientId: string, oauthToken: string | undefined, outDir?: string, debug?: boolean, albumName?: string, customOutFile?: string, outFormat?: string): Promise<string | undefined> {
+export async function downloadTrack(track: Track, options: DownloadOptions): Promise<string | undefined> {
+  const { clientId, oauthToken, outDir, debug, album: albumName, customOutFile, format: outFormat } = options;
   const { id, title, description, publisher_metadata, media, user, permalink, downloadable, has_downloads_left, waveform_url, duration, artwork_url } = track;
   const artist = publisher_metadata?.artist || user.username;
   console.log(`${title} — ${artist}`);
